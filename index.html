@@ -13,7 +13,8 @@
     input, textarea { width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
     button { margin-top: 20px; width: 100%; padding: 12px; background: #2563eb; color: white; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; }
     button:hover { background: #1e40af; }
-    .status { margin-top: 15px; text-align: center; color: green; font-weight: bold; }
+    button:disabled { background: #93a5c9; cursor: not-allowed; }
+    .status { margin-top: 15px; text-align: center; font-weight: bold; white-space: pre-wrap; }
   </style>
 </head>
 <body>
@@ -29,7 +30,6 @@
     <label>Description:</label>
     <textarea id="description" placeholder="Get 50% off on all courses..."></textarea>
 
-    <!-- NEW: File Upload Button -->
     <label>Upload Image from PC:</label>
     <input type="file" id="imageFile" accept="image/*">
 
@@ -39,7 +39,7 @@
     <label>Link (When user clicks the button):</label>
     <input type="text" id="cta_link" placeholder="https://your-sale-page.com">
 
-    <button type="submit">🚀 Save & Activate Ad</button>
+    <button type="submit" id="submitBtn">🚀 Save & Activate Ad</button>
   </form>
   <div class="status" id="statusMsg"></div>
 </div>
@@ -49,59 +49,85 @@
   const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpieWN0amRkbGJ5ZGR6YXZtY3pnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzNzE2NzYsImV4cCI6MjA5Nzk0NzY3Nn0.klEa0-zSGbHZYA-fYiHYg4ceoL1PQ87gowGEbvVmhqU';
   const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-  document.getElementById('adForm').addEventListener('submit', async (e) => {
+  const form = document.getElementById('adForm');
+  const statusMsg = document.getElementById('statusMsg');
+  const submitBtn = document.getElementById('submitBtn');
+
+  function setStatus(msg, color) {
+    statusMsg.innerText = msg;
+    statusMsg.style.color = color;
+  }
+
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    
-    const statusMsg = document.getElementById('statusMsg');
-    statusMsg.innerText = "Saving...";
-    statusMsg.style.color = "blue";
+    submitBtn.disabled = true;
+    setStatus('Saving...', 'blue');
 
-    // 1. Turn off all old ads
-    await sb.from('advertisements').update({ is_active: false }).neq('id', '00000000-0000-0000-0000-000000000000');
+    try {
+      // 1. Turn off all old ads (check for error instead of ignoring it)
+      const { error: deactivateError } = await sb
+        .from('advertisements')
+        .update({ is_active: false })
+        .eq('is_active', true);
 
-    let finalImageUrl = document.getElementById('image_url').value;
-
-    // 2. If user selected a file from PC, upload it to Supabase Storage
-    const fileInput = document.getElementById('imageFile');
-    if (fileInput.files.length > 0) {
-      const file = fileInput.files[0];
-      const fileName = 'ad_' + Date.now() + '.jpg'; // Create a unique file name
-      
-      const { data: uploadData, error: uploadError } = await sb
-        .storage
-        .from('ads')
-        .upload(fileName, file);
-
-      if (uploadError) {
-        statusMsg.innerText = "❌ Error uploading image: " + uploadError.message;
-        statusMsg.style.color = "red";
-        return;
+      if (deactivateError) {
+        throw new Error('Could not deactivate old ads: ' + deactivateError.message);
       }
 
-      // Get the public URL of the uploaded image
-      const { data: publicUrlData } = sb.storage.from('ads').getPublicUrl(fileName);
-      finalImageUrl = publicUrlData.publicUrl;
-    }
+      let finalImageUrl = document.getElementById('image_url').value.trim();
 
-    // 3. Get form data
-    const newAd = {
-      title: document.getElementById('title').value,
-      description: document.getElementById('description').value,
-      image_url: finalImageUrl,
-      cta_link: document.getElementById('cta_link').value,
-      is_active: true
-    };
+      // 2. If user selected a file from PC, upload it to Supabase Storage
+      const fileInput = document.getElementById('imageFile');
+      if (fileInput.files.length > 0) {
+        const file = fileInput.files[0];
+        const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+        const fileName = 'ad_' + Date.now() + '.' + ext;
 
-    // 4. Save to Supabase Database
-    const { error } = await sb.from('advertisements').insert([newAd]);
+        const { error: uploadError } = await sb
+          .storage
+          .from('ads')
+          .upload(fileName, file, {
+            cacheControl: '3600',
+            upsert: false,
+            contentType: file.type || 'image/jpeg'
+          });
 
-    if (error) {
-      statusMsg.innerText = "❌ Error saving ad: " + error.message;
-      statusMsg.style.color = "red";
-    } else {
-      statusMsg.innerText = "✅ Ad Activated! Go check your dummy website.";
-      statusMsg.style.color = "green";
-      document.getElementById('adForm').reset();
+        if (uploadError) {
+          throw new Error('Image upload failed: ' + uploadError.message);
+        }
+
+        const { data: publicUrlData } = sb.storage.from('ads').getPublicUrl(fileName);
+        finalImageUrl = publicUrlData.publicUrl;
+      }
+
+      if (!finalImageUrl) {
+        throw new Error('Please upload an image or paste an image URL.');
+      }
+
+      // 3. Build ad object
+      const newAd = {
+        title: document.getElementById('title').value.trim(),
+        description: document.getElementById('description').value.trim(),
+        image_url: finalImageUrl,
+        cta_link: document.getElementById('cta_link').value.trim(),
+        is_active: true
+      };
+
+      // 4. Save to Supabase Database
+      const { error: insertError } = await sb.from('advertisements').insert([newAd]);
+
+      if (insertError) {
+        throw new Error('Could not save ad: ' + insertError.message);
+      }
+
+      setStatus('✅ Ad Activated! Go check your dummy website.', 'green');
+      form.reset();
+
+    } catch (err) {
+      console.error(err);
+      setStatus('❌ ' + err.message, 'red');
+    } finally {
+      submitBtn.disabled = false;
     }
   });
 </script>
