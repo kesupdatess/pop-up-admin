@@ -29,7 +29,11 @@
     <label>Description:</label>
     <textarea id="description" placeholder="Get 50% off on all courses..."></textarea>
 
-    <label>Image URL:</label>
+    <!-- NEW: File Upload Button -->
+    <label>Upload Image from PC:</label>
+    <input type="file" id="imageFile" accept="image/*">
+
+    <label>OR Paste Image URL:</label>
     <input type="text" id="image_url" placeholder="https://example.com/image.jpg">
 
     <label>Link (When user clicks the button):</label>
@@ -48,27 +52,55 @@
   document.getElementById('adForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     
-    // 1. Turn off all old ads so only the new one shows
+    const statusMsg = document.getElementById('statusMsg');
+    statusMsg.innerText = "Saving...";
+    statusMsg.style.color = "blue";
+
+    // 1. Turn off all old ads
     await sb.from('advertisements').update({ is_active: false }).neq('id', '00000000-0000-0000-0000-000000000000');
 
-    // 2. Get form data
+    let finalImageUrl = document.getElementById('image_url').value;
+
+    // 2. If user selected a file from PC, upload it to Supabase Storage
+    const fileInput = document.getElementById('imageFile');
+    if (fileInput.files.length > 0) {
+      const file = fileInput.files[0];
+      const fileName = 'ad_' + Date.now() + '.jpg'; // Create a unique file name
+      
+      const { data: uploadData, error: uploadError } = await sb
+        .storage
+        .from('ads')
+        .upload(fileName, file);
+
+      if (uploadError) {
+        statusMsg.innerText = "❌ Error uploading image: " + uploadError.message;
+        statusMsg.style.color = "red";
+        return;
+      }
+
+      // Get the public URL of the uploaded image
+      const { data: publicUrlData } = sb.storage.from('ads').getPublicUrl(fileName);
+      finalImageUrl = publicUrlData.publicUrl;
+    }
+
+    // 3. Get form data
     const newAd = {
       title: document.getElementById('title').value,
       description: document.getElementById('description').value,
-      image_url: document.getElementById('image_url').value,
+      image_url: finalImageUrl,
       cta_link: document.getElementById('cta_link').value,
       is_active: true
     };
 
-    // 3. Save to Supabase
+    // 4. Save to Supabase Database
     const { error } = await sb.from('advertisements').insert([newAd]);
 
     if (error) {
-      document.getElementById('statusMsg').innerText = "❌ Error saving ad.";
-      document.getElementById('statusMsg').style.color = "red";
+      statusMsg.innerText = "❌ Error saving ad: " + error.message;
+      statusMsg.style.color = "red";
     } else {
-      document.getElementById('statusMsg').innerText = "✅ Ad Activated! Go check your dummy website.";
-      document.getElementById('statusMsg').style.color = "green";
+      statusMsg.innerText = "✅ Ad Activated! Go check your dummy website.";
+      statusMsg.style.color = "green";
       document.getElementById('adForm').reset();
     }
   });
