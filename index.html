@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ad Admin Panel</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { font-family: Arial, sans-serif; background: #e8eaf1; padding: 40px; }
+    .container { max-width: 500px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    h1 { text-align: center; color: #333; }
+    label { display: block; margin-top: 15px; font-weight: bold; color: #555; }
+    input, textarea { width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    button { margin-top: 20px; width: 100%; padding: 12px; background: #2563eb; color: white; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; }
+    button:hover { background: #1e40af; }
+    .status { margin-top: 15px; text-align: center; color: green; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>📢 Ad Admin Panel</h1>
+  <p style="text-align:center; color:#777;">Fill this form to change the popup ad on your dummy website.</p>
+
+  <form id="adForm">
+    <label>Ad Title:</label>
+    <input type="text" id="title" placeholder="e.g., Big Summer Sale!" required>
+
+    <label>Description:</label>
+    <textarea id="description" placeholder="Get 50% off on all courses..."></textarea>
+
+    <label>Image URL:</label>
+    <input type="text" id="image_url" placeholder="https://example.com/image.jpg">
+
+    <label>Link (When user clicks the button):</label>
+    <input type="text" id="cta_link" placeholder="https://your-sale-page.com">
+
+    <button type="submit">🚀 Save & Activate Ad</button>
+  </form>
+  <div class="status" id="statusMsg"></div>
+</div>
+
+<script>
+  const SUPABASE_URL = 'https://jbyctjddlbyddzavmczg.supabase.co';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpieWN0amRkbGJ5ZGR6YXZtY3pnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzNzE2NzYsImV4cCI6MjA5Nzk0NzY3Nn0.klEa0-zSGbHZYA-fYiHYg4ceoL1PQ87gowGEbvVmhqU';
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  document.getElementById('adForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    // 1. Turn off all old ads so only the new one shows
+    await sb.from('advertisements').update({ is_active: false }).neq('id', '00000000-0000-0000-0000-000000000000');
+
+    // 2. Get form data
+    const newAd = {
+      title: document.getElementById('title').value,
+      description: document.getElementById('description').value,
+      image_url: document.getElementById('image_url').value,
+      cta_link: document.getElementById('cta_link').value,
+      is_active: true
+    };
+
+    // 3. Save to Supabase
+    const { error } = await sb.from('advertisements').insert([newAd]);
+
+    if (error) {
+      document.getElementById('statusMsg').innerText = "❌ Error saving ad.";
+      document.getElementById('statusMsg').style.color = "red";
+    } else {
+      document.getElementById('statusMsg').innerText = "✅ Ad Activated! Go check your dummy website.";
+      document.getElementById('statusMsg').style.color = "green";
+      document.getElementById('adForm').reset();
+    }
+  });
+</script>
+
+</body>
+</html>
